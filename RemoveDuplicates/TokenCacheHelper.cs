@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using Microsoft.Graph;
 using Microsoft.Identity.Client;
 using Directory = System.IO.Directory;
 using File = System.IO.File;

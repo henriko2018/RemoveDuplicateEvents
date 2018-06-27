@@ -19,7 +19,8 @@ namespace console_csharp_connect_sample
         // The Group.Read.All permission is an admin-only scope, so authorization will fail if you 
         // want to sign in with a non-admin account. Remove that permission and comment out the group operations in 
         // the UserMode() method if you want to run this sample with a non-admin account.
-        public static string[] Scopes = { "https://outlook.office.com/calendars.readwrite" };
+        //public static string[] Scopes = { "https://outlook.office.com/calendars.readwrite" };
+        public static string[] Scopes = { "calendars.readwrite" };
 
         //public static PublicClientApplication IdentityClientApp = new PublicClientApplication(ClientId);
         public static PublicClientApplication IdentityClientApp = new PublicClientApplication(ClientId, "https://login.microsoftonline.com/common/", TokenCacheHelper.GetUserCache());
@@ -36,8 +37,8 @@ namespace console_csharp_connect_sample
             try
             {
                 _graphClient = new GraphServiceClient(
-                    //"https://graph.microsoft.com/v1.0",
-                    "https://outlook.office.com/api/v2.0/",
+                    //"https://outlook.office.com/api/v2.0/",
+                    "https://graph.microsoft.com/v1.0",
                     new DelegateAuthenticationProvider(
                         async (requestMessage) =>
                         {
