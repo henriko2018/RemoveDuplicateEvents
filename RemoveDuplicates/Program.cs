@@ -1,11 +1,11 @@
+using CommandLine;
+using console_csharp_connect_sample;
+using Microsoft.Graph;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
-using console_csharp_connect_sample;
-using CommandLine;
-using Microsoft.Graph;
 
 namespace RemoveDuplicates
 {
@@ -47,10 +47,7 @@ namespace RemoveDuplicates
 
                     if (string.IsNullOrEmpty(_options.Calendar))
                     {
-                        foreach (var calendar in calendars)
-                        {
-                            await ProcessCalendarAsync(graphClient, calendar);
-                        }
+                        WriteInfo("Use -h or --help to view options.");
                     }
                     else
                     {

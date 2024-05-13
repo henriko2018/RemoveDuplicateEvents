@@ -10,7 +10,7 @@ namespace RemoveDuplicates
         [Option(shortName: 'r', longName: "report", HelpText = "Write report to a given file, e.g. \"Report.md\".")]
         public string Report { get; set; }
 
-        [Option(shortName: 'c', longName: "calendar", HelpText = "Process only a named calendar, e.g. \"Family calendar\". Otherwise all calendars are processed.")]
+        [Option(shortName: 'c', longName: "calendar", HelpText = "Process a named calendar, e.g. \"Family calendar\".")]
         public string Calendar { get; set; }
     }
 }
