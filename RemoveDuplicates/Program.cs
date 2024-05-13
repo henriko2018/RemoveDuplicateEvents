@@ -88,7 +88,9 @@ namespace RemoveDuplicates
 
             WriteInfo(events.Count + " calendar events.");
 
-            var groups = events.GroupBy(e => new GroupByFields(e.Subject, e.Start.DateTime, e.End.DateTime)).ToList();
+            var groups = events.GroupBy(e => new GroupByFields(e.Subject, e.Start.DateTime, e.End.DateTime))
+                .OrderBy(g => g.Key.Start)
+                .ToList();
             WriteInfo(groups.Count + " groups.");
             var duplicateGroups = groups.Where(g => g.Count() > 1).ToList();
             WriteInfo("Groups with duplicate subject, start, end: " + duplicateGroups.Count);
@@ -115,6 +117,7 @@ namespace RemoveDuplicates
 
             // Double-check for existance so that we don't use "phantom" events.
             var events = await GetNonPhantomsAsync(graphClient, calendar, idGroups.Select(g => g.Key).ToList());
+            // Events are sorted with the one to keep first.
             WriteInfo($"  Number of unique \"non-phantom\" IDs: {events.Count}");
 
             if (events.Count > 1 && _options.Fix)
@@ -147,7 +150,10 @@ namespace RemoveDuplicates
                 }
             }
 
-            return events;
+            var orderedEvents = _options.KeepLongestBody
+                ? events.OrderByDescending(e => e.Body.Content.Length).ThenByDescending(e => e.LastModifiedDateTime)
+                : events.OrderByDescending(e => e.LastModifiedDateTime);
+            return [.. orderedEvents];
         }
 
         private static async Task RemoveDuplicatesAsync(IGraphServiceClient graphClient, Calendar calendar, IList<Event> events)
@@ -197,22 +203,15 @@ namespace RemoveDuplicates
                 System.IO.File.AppendAllText(_options.Report, message + Environment.NewLine);
         }
 
-        private struct GroupByFields
+        private readonly struct GroupByFields(string subject, string start, string end)
         {
-            private readonly string _subject;
-            private readonly string _start;
-            private readonly string _end;
-
-            public GroupByFields(string subject, string start, string end)
-            {
-                _subject = subject;
-                _start = start;
-                _end = end;
-            }
+            public readonly string Subject { get; } = subject;
+            public readonly string Start { get; } = start;
+            public readonly string End { get; } = end;
 
             public override string ToString()
             {
-                return $"{_subject} ({_start} - {_end})";
+                return $"{Subject} ({Start} - {End})";
             }
         }
     }

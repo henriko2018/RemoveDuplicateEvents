@@ -12,5 +12,8 @@ namespace RemoveDuplicates
 
         [Option(shortName: 'c', longName: "calendar", HelpText = "Process a named calendar, e.g. \"Family calendar\".")]
         public string Calendar { get; set; }
+
+        [Option(longName: "keepLongestBody", HelpText = "Keep duplicate with longest body. (Default is keep last modified.)")]
+        public bool KeepLongestBody { get; set; }
     }
 }
