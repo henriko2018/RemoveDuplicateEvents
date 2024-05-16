@@ -2,7 +2,6 @@
 //See LICENSE in the project root for license information.
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
-using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Authentication;
 using System;
 using System.Collections.Generic;
@@ -41,15 +40,16 @@ namespace console_csharp_connect_sample
             try
             {
                 _graphClient = new GraphServiceClient(
-                    baseUrl: "https://graph.microsoft.com/v1.0",
+                    //baseUrl: "https://graph.microsoft.com/v1.0",
                     //baseUrl: "https://outlook.office.com/api/v2.0/",
-                    authenticationProvider: new DelegateAuthenticationProvider(
-                        //async (requestMessage) =>
-                        //{
-                        //    var token = await GetTokenForUserAsync();
-                        //    requestMessage.Headers.Authorization = new AuthenticationHeaderValue("bearer", token);
-                        //}
-                        ));
+                    //authenticationProvider: new DelegateAuthenticationProvider(
+                    //async (requestMessage) =>
+                    //{
+                    //    var token = await GetTokenForUserAsync();
+                    //    requestMessage.Headers.Authorization = new AuthenticationHeaderValue("bearer", token);
+                    //}
+                    authenticationProvider: new BaseBearerTokenAuthenticationProvider(new DelegateAuthenticationProvider())
+                );
                 return _graphClient;
             }
 
@@ -61,15 +61,17 @@ namespace console_csharp_connect_sample
             return _graphClient;
         }
 
-        internal class DelegateAuthenticationProvider : IAuthenticationProvider
+        internal class DelegateAuthenticationProvider : IAccessTokenProvider
         {
-            public async Task AuthenticateRequestAsync(
-                RequestInformation request,
-                Dictionary<string, object> additionalAuthenticationContext = null,
-                CancellationToken cancellationToken = default)
-            {
-                request.Headers.Add("Authorization", "Bearer: " + await GetTokenForUserAsync());
-            }
+            public AllowedHostsValidator AllowedHostsValidator => throw new NotImplementedException();
+
+            //public async Task AuthenticateRequestAsync(
+            //    RequestInformation request,
+            //    Dictionary<string, object> additionalAuthenticationContext = null,
+            //    CancellationToken cancellationToken = default)
+            //{
+            //    request.Headers.Add("Authorization", "Bearer: " + await GetTokenForUserAsync());
+            //}
 
             /// <summary>
             /// Get Token for User.
@@ -97,6 +99,11 @@ namespace console_csharp_connect_sample
                 }
 
                 return UserToken;
+            }
+
+            public Task<string> GetAuthorizationTokenAsync(Uri uri, Dictionary<string, object> additionalAuthenticationContext = null, CancellationToken cancellationToken = default)
+            {
+                return GetTokenForUserAsync();
             }
         }
     }
