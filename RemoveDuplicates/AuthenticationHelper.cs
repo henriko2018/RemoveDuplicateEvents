@@ -2,11 +2,13 @@
 //See LICENSE in the project root for license information.
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
-using RemoveDuplicates;
+using Microsoft.Kiota.Abstractions;
+using Microsoft.Kiota.Abstractions.Authentication;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Net.Http.Headers;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace console_csharp_connect_sample
@@ -20,10 +22,12 @@ namespace console_csharp_connect_sample
         // want to sign in with a non-admin account. Remove that permission and comment out the group operations in 
         // the UserMode() method if you want to run this sample with a non-admin account.
         //public static string[] Scopes = { "https://outlook.office.com/calendars.readwrite" };
-        public static string[] Scopes = { "calendars.readwrite" };
+        public static string[] Scopes = ["calendars.readwrite"];
 
-        //public static PublicClientApplication IdentityClientApp = new PublicClientApplication(ClientId);
-        public static PublicClientApplication IdentityClientApp = new PublicClientApplication(ClientId, "https://login.microsoftonline.com/common/", TokenCacheHelper.GetUserCache());
+        public static IPublicClientApplication IdentityClientApp = PublicClientApplicationBuilder
+            .Create(ClientId)
+            .WithCacheOptions(new CacheOptions(useSharedCache: true))
+            .Build();
         public static string UserToken = null;
         public static DateTimeOffset Expiration;
 
@@ -40,11 +44,12 @@ namespace console_csharp_connect_sample
                     baseUrl: "https://graph.microsoft.com/v1.0",
                     //baseUrl: "https://outlook.office.com/api/v2.0/",
                     authenticationProvider: new DelegateAuthenticationProvider(
-                        async (requestMessage) =>
-                        {
-                            var token = await GetTokenForUserAsync();
-                            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("bearer", token);
-                        }));
+                        //async (requestMessage) =>
+                        //{
+                        //    var token = await GetTokenForUserAsync();
+                        //    requestMessage.Headers.Authorization = new AuthenticationHeaderValue("bearer", token);
+                        //}
+                        ));
                 return _graphClient;
             }
 
@@ -56,32 +61,43 @@ namespace console_csharp_connect_sample
             return _graphClient;
         }
 
-
-        /// <summary>
-        /// Get Token for User.
-        /// </summary>
-        /// <returns>Token for user.</returns>
-        public static async Task<string> GetTokenForUserAsync()
+        internal class DelegateAuthenticationProvider : IAuthenticationProvider
         {
-            AuthenticationResult authResult;
-            try
+            public async Task AuthenticateRequestAsync(
+                RequestInformation request,
+                Dictionary<string, object> additionalAuthenticationContext = null,
+                CancellationToken cancellationToken = default)
             {
-                authResult = await IdentityClientApp.AcquireTokenSilentAsync(Scopes, IdentityClientApp.Users.First());
-                UserToken = authResult.AccessToken;
+                request.Headers.Add("Authorization", "Bearer: " + await GetTokenForUserAsync());
             }
 
-            catch (Exception)
+            /// <summary>
+            /// Get Token for User.
+            /// </summary>
+            /// <returns>Token for user.</returns>
+            public static async Task<string> GetTokenForUserAsync()
             {
-                if (UserToken == null || Expiration <= DateTimeOffset.UtcNow.AddMinutes(5))
+                AuthenticationResult authResult;
+                try
                 {
-                    authResult = await IdentityClientApp.AcquireTokenAsync(Scopes);
-
+                    var accounts = await IdentityClientApp.GetAccountsAsync();
+                    authResult = await IdentityClientApp.AcquireTokenSilent(Scopes, accounts.First()).ExecuteAsync();
                     UserToken = authResult.AccessToken;
-                    Expiration = authResult.ExpiresOn;
                 }
-            }
 
-            return UserToken;
+                catch (Exception)
+                {
+                    if (UserToken == null || Expiration <= DateTimeOffset.UtcNow.AddMinutes(5))
+                    {
+                        authResult = await IdentityClientApp.AcquireTokenInteractive(Scopes).ExecuteAsync();
+
+                        UserToken = authResult.AccessToken;
+                        Expiration = authResult.ExpiresOn;
+                    }
+                }
+
+                return UserToken;
+            }
         }
     }
 }

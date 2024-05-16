@@ -139,7 +139,7 @@ namespace RemoveDuplicates
                 requestConfiguration.QueryParameters.StartDateTime = "2010-01-01";
                 requestConfiguration.QueryParameters.EndDateTime = "2030-01-01";
                 requestConfiguration.QueryParameters.Top = 20;
-                requestConfiguration.QueryParameters.Select = new string[] { "id", "subject", "start", "end" };
+                requestConfiguration.QueryParameters.Select = ["id", "subject", "start", "end"];
             });
             _instances.Add(eventId, response.Value);
             return response.Value;
