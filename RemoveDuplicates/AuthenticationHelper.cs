@@ -1,13 +1,13 @@
 ﻿//Copyright (c) Microsoft. All rights reserved. Licensed under the MIT license.
 //See LICENSE in the project root for license information.
-using System;
-using System.Diagnostics;
-using System.Net.Http.Headers;
-using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
 using RemoveDuplicates;
+using System;
+using System.Diagnostics;
+using System.Linq;
+using System.Net.Http.Headers;
+using System.Threading.Tasks;
 
 namespace console_csharp_connect_sample
 {
@@ -37,9 +37,9 @@ namespace console_csharp_connect_sample
             try
             {
                 _graphClient = new GraphServiceClient(
-                    //"https://outlook.office.com/api/v2.0/",
-                    "https://graph.microsoft.com/v1.0",
-                    new DelegateAuthenticationProvider(
+                    baseUrl: "https://graph.microsoft.com/v1.0",
+                    //baseUrl: "https://outlook.office.com/api/v2.0/",
+                    authenticationProvider: new DelegateAuthenticationProvider(
                         async (requestMessage) =>
                         {
                             var token = await GetTokenForUserAsync();

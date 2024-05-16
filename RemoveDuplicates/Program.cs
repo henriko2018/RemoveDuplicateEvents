@@ -1,6 +1,7 @@
 using CommandLine;
 using console_csharp_connect_sample;
 using Microsoft.Graph;
+using Microsoft.Graph.Models;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -20,6 +21,8 @@ namespace RemoveDuplicates
                 .WithParsed(opts =>
                 {
                     _options = opts;
+                    if (_options.KeepLongestBody && _options.KeepRecurring)
+                        throw new ArgumentException("You can't use both --keepLongestBody and --keepRecurring.");
                     RunOptionsAndReturnExitCodeAsync().GetAwaiter().GetResult();
                 });
 
@@ -39,7 +42,7 @@ namespace RemoveDuplicates
                 if (graphClient != null)
                 {
                     WriteInfo("# Calendars:");
-                    var calendars = await graphClient.Me.Calendars.Request().GetAsync();
+                    var calendars = (await graphClient.Me.Calendars.GetAsync()).Value;
                     foreach (var calendar in calendars)
                     {
                         WriteInfo($"- {calendar.Name}");
@@ -70,42 +73,85 @@ namespace RemoveDuplicates
             }
         }
 
-        private static async Task ProcessCalendarAsync(IGraphServiceClient graphClient, Calendar calendar)
+        private static async Task ProcessCalendarAsync(GraphServiceClient graphClient, Calendar calendar)
         {
             WriteInfo();
             WriteInfo($"# {calendar.Name}");
 
-            var request = graphClient.Me.Calendars[calendar.Id].Events.Request().Select("id,subject,start,end").Top(100);
-            var events = new List<Event>();
-            do
+            List<string> selects = ["id", "subject", "start", "end"];
+            if (_options.CheckRecurrance)
+                selects.Add("type");
+            var response = await graphClient.Me.Calendars[calendar.Id].Events.GetAsync(requestConfiguration =>
             {
-                var page = await request.GetAsync();
-                events.AddRange(page.CurrentPage);
-                Console.Write(events.Count);
+                requestConfiguration.QueryParameters.Top = 100;
+                requestConfiguration.QueryParameters.Select = [.. selects];
+            });
+            var events = new List<Event>();
+            while (response.Value is not null)
+            {
+                response.Value.AddRange(response.Value);
+                Console.Write(response.Value.Count);
                 Console.SetCursorPosition(0, Console.CursorTop);
-                request = page.NextPageRequest;
-            } while (request != null);
-
+                if (!string.IsNullOrEmpty(response.OdataNextLink))
+                    response = await graphClient.Me.Calendars[calendar.Id].Events.WithUrl(response.OdataNextLink).GetAsync();
+            }
             WriteInfo(events.Count + " calendar events.");
 
-            var groups = events.GroupBy(e => new GroupByFields(e.Subject, e.Start.DateTime, e.End.DateTime))
-                .OrderBy(g => g.Key.Start)
-                .ToList();
+            var groups = new Dictionary<GroupByFields, IList<Event>>();
+            foreach (var @event in events)
+            {
+                var groupKey = new GroupByFields(@event.Subject, @event.Start.DateTime, @event.End.DateTime);
+                if (!groups.ContainsKey(groupKey))
+                {
+                    var group = new List<Event> { @event };
+                    if (!_options.CheckRecurrance || @event.Type != EventType.SeriesMaster)
+                        group.AddRange(events
+                            .Where(e => e.Id != @event.Id && new GroupByFields(e.Subject, e.Start.DateTime, e.End.DateTime) == groupKey));
+                    else
+                    {
+                        var otherEvents = events.Where(e => e.Id != @event.Id && e.Subject == @event.Subject);
+                        foreach (var otherEvent in otherEvents)
+                        {
+                            var instances = await GetInstancesAsync(graphClient, calendar.Id, otherEvent.Id);
+                            group.AddRange(instances
+                                .Where(e => new GroupByFields(e.Subject, e.Start.DateTime, e.End.DateTime) == groupKey));
+                        }
+                    }
+                    groups.Add(groupKey, group);
+                }
+            }
+
             WriteInfo(groups.Count + " groups.");
-            var duplicateGroups = groups.Where(g => g.Count() > 1).ToList();
+            var duplicateGroups = groups.Where(g => g.Value.Count() > 1).ToList();
             WriteInfo("Groups with duplicate subject, start, end: " + duplicateGroups.Count);
             foreach (var duplicateGroup in duplicateGroups)
-            {
                 await ProcessDuplicatesAsync(graphClient, calendar, duplicateGroup);
-            }
         }
 
-        private static async Task ProcessDuplicatesAsync(IGraphServiceClient graphClient, Calendar calendar, IGrouping<GroupByFields, Event> duplicateGroup)
+        private static readonly Dictionary<string, IList<Event>> _instances = [];
+
+        private static async Task<IList<Event>> GetInstancesAsync(GraphServiceClient graphClient, string calendarId, string eventId)
         {
-            WriteInfo($"- {duplicateGroup.Key} ({duplicateGroup.Count()} items)");
+            if (_instances.ContainsKey(eventId))
+                return _instances[eventId];
+            var response = await graphClient.Me.Events[eventId].Instances.GetAsync(requestConfiguration =>
+            {
+                requestConfiguration.QueryParameters.StartDateTime = "2010-01-01";
+                requestConfiguration.QueryParameters.EndDateTime = "2030-01-01";
+                requestConfiguration.QueryParameters.Top = 20;
+                requestConfiguration.QueryParameters.Select = new string[] { "id", "subject", "start", "end" };
+            });
+            _instances.Add(eventId, response.Value);
+            return response.Value;
+        }
+
+        private static async Task ProcessDuplicatesAsync(GraphServiceClient graphClient, Calendar calendar,
+            KeyValuePair<GroupByFields, IList<Event>> duplicateGroup)
+        {
+            WriteInfo($"- {duplicateGroup.Key} ({duplicateGroup.Value.Count()} items)");
 
             // Check if more than one event have the same ID.
-            var idGroups = duplicateGroup.GroupBy(e => e.Id).ToList();
+            var idGroups = duplicateGroup.Value.GroupBy(e => e.Id).ToList();
             if (idGroups.Any(g => g.Count() > 1))
             {
                 WriteInfo("  The impossible seems to have happened: Multiple events have the same id. Here they are:");
@@ -129,7 +175,7 @@ namespace RemoveDuplicates
             }
         }
 
-        private static async Task<List<Event>> GetNonPhantomsAsync(IGraphServiceClient graphClient, Calendar calendar, IList<string> ids)
+        private static async Task<List<Event>> GetNonPhantomsAsync(GraphServiceClient graphClient, Calendar calendar, IList<string> ids)
         {
             var events = new List<Event>();
             var count = 0;
@@ -139,7 +185,7 @@ namespace RemoveDuplicates
                 Console.SetCursorPosition(0, Console.CursorTop);
                 try
                 {
-                    events.Add(await graphClient.Me.Calendars[calendar.Id].Events[id].Request().GetAsync());
+                    events.Add(await graphClient.Me.Calendars[calendar.Id].Events[id].GetAsync());
                 }
                 catch (ServiceException ex)
                 {
@@ -156,7 +202,7 @@ namespace RemoveDuplicates
             return [.. orderedEvents];
         }
 
-        private static async Task RemoveDuplicatesAsync(IGraphServiceClient graphClient, Calendar calendar, IList<Event> events)
+        private static async Task RemoveDuplicatesAsync(GraphServiceClient graphClient, Calendar calendar, IList<Event> events)
         {
             var eventToKeep = events.First();
             var eventsToDelete = events.Skip(1).ToList();
@@ -165,7 +211,7 @@ namespace RemoveDuplicates
             {
                 try
                 {
-                    await graphClient.Me.Calendars[calendar.Id].Events[@event.Id].Request().DeleteAsync();
+                    await graphClient.Me.Calendars[calendar.Id].Events[@event.Id].DeleteAsync();
                     deleted++;
                     Console.Write($"  {deleted} of {eventsToDelete.Count} deleted.");
                     Console.SetCursorPosition(0, Console.CursorTop);
@@ -203,12 +249,8 @@ namespace RemoveDuplicates
                 System.IO.File.AppendAllText(_options.Report, message + Environment.NewLine);
         }
 
-        private readonly struct GroupByFields(string subject, string start, string end)
+        private record GroupByFields(string Subject, string Start, string End)
         {
-            public readonly string Subject { get; } = subject;
-            public readonly string Start { get; } = start;
-            public readonly string End { get; } = end;
-
             public override string ToString()
             {
                 return $"{Subject} ({Start} - {End})";
