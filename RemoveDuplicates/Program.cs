@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 
 namespace RemoveDuplicates
@@ -20,6 +21,8 @@ namespace RemoveDuplicates
                 .WithParsed(opts =>
                 {
                     _options = opts;
+                    if (_options.KeepLongestBody && _options.KeepRecurring)
+                        throw new ArgumentException("You can't use both --keepLongestBody and --keepRecurring.");
                     RunOptionsAndReturnExitCodeAsync().GetAwaiter().GetResult();
                 });
 
@@ -75,7 +78,8 @@ namespace RemoveDuplicates
             WriteInfo();
             WriteInfo($"# {calendar.Name}");
 
-            var request = graphClient.Me.Calendars[calendar.Id].Events.Request().Select("id,subject,start,end").Top(100);
+            var request = graphClient.Me.Calendars[calendar.Id].Events.Request()
+                .Select("id,subject,start,end,type").Top(100);
             var events = new List<Event>();
             do
             {
@@ -88,24 +92,83 @@ namespace RemoveDuplicates
 
             WriteInfo(events.Count + " calendar events.");
 
-            var groups = events.GroupBy(e => new GroupByFields(e.Subject, e.Start.DateTime, e.End.DateTime))
-                .OrderBy(g => g.Key.Start)
-                .ToList();
+            var groups = new Dictionary<GroupByFields, IList<Event>>();
+            var count = 0;
+            foreach (var @event in events)
+            {
+                Console.Write($"Checking {++count}...");
+                Console.SetCursorPosition(0, Console.CursorTop);
+
+                var groupKey = new GroupByFields(@event.Subject, @event.Start.DateTime, @event.End.DateTime);
+                if (!groups.ContainsKey(groupKey))
+                {
+                    var group = new List<Event> { @event };
+                    if (!_options.CheckRecurrance || @event.Type != EventType.SeriesMaster)
+                    {
+                        var duplicates = events
+                            .Where(e => e.Id != @event.Id && new GroupByFields(e.Subject, e.Start.DateTime, e.End.DateTime) == groupKey)
+                            .ToList();
+                        group.AddRange(duplicates);
+                    }
+                    else
+                    {
+                        var otherEventsWithSameSubject = events
+                            .Where(e => e.Id != @event.Id && e.Subject == @event.Subject)
+                            .ToList();
+                        if (otherEventsWithSameSubject.Count > 0)
+                        {
+                            var instances = await GetInstancesAsync(graphClient, calendar.Id, @event.Id);
+                            foreach (var instance in instances)
+                            {
+                                var duplicates = otherEventsWithSameSubject
+                                    .Where(e => e.Start.DateTime == instance.Start.DateTime && e.End.DateTime == instance.End.DateTime)
+                                    .ToList();
+                                group.AddRange(duplicates);
+                            }
+                        }
+                    }
+                    groups.Add(groupKey, group);
+                }
+            }
+
             WriteInfo(groups.Count + " groups.");
-            var duplicateGroups = groups.Where(g => g.Count() > 1).ToList();
+            var duplicateGroups = groups.Where(g => g.Value.Count() > 1).ToList();
             WriteInfo("Groups with duplicate subject, start, end: " + duplicateGroups.Count);
             foreach (var duplicateGroup in duplicateGroups)
-            {
                 await ProcessDuplicatesAsync(graphClient, calendar, duplicateGroup);
+        }
+
+        private static readonly Dictionary<string, IList<Event>> _instances = [];
+
+        private static async Task<IList<Event>> GetInstancesAsync(IGraphServiceClient graphClient, string calendarId, string eventId)
+        {
+            try
+            {
+                if (_instances.ContainsKey(eventId))
+                    return _instances[eventId];
+                var request = graphClient.Me.Events[eventId].Instances.Request().Select("id,subject,start,end").Top(20);
+                var now = DateTimeOffset.Now;
+                var endDate = new DateTimeOffset(now.Year, 1, 1, 0, 0, 0, now.Offset).AddYears(1);
+                var startDate = endDate.AddYears(-5);
+                request.QueryOptions.Add(new QueryOption("startDateTime", WebUtility.UrlEncode(startDate.ToString("O"))));
+                request.QueryOptions.Add(new QueryOption("endDateTime", WebUtility.UrlEncode(endDate.ToString("O"))));
+                var response = await request.GetAsync();
+                _instances.Add(eventId, response.CurrentPage);
+                return response;
+            }
+            catch (Exception ex)
+            {
+                WriteError(ex.ToString());
+                return [];
             }
         }
 
-        private static async Task ProcessDuplicatesAsync(IGraphServiceClient graphClient, Calendar calendar, IGrouping<GroupByFields, Event> duplicateGroup)
+        private static async Task ProcessDuplicatesAsync(IGraphServiceClient graphClient, Calendar calendar, KeyValuePair<GroupByFields, IList<Event>> duplicateGroup)
         {
-            WriteInfo($"- {duplicateGroup.Key} ({duplicateGroup.Count()} items)");
+            WriteInfo($"- {duplicateGroup.Key} ({duplicateGroup.Value.Count()} items)");
 
             // Check if more than one event have the same ID.
-            var idGroups = duplicateGroup.GroupBy(e => e.Id).ToList();
+            var idGroups = duplicateGroup.Value.GroupBy(e => e.Id).ToList();
             if (idGroups.Any(g => g.Count() > 1))
             {
                 WriteInfo("  The impossible seems to have happened: Multiple events have the same id. Here they are:");
@@ -203,12 +266,8 @@ namespace RemoveDuplicates
                 System.IO.File.AppendAllText(_options.Report, message + Environment.NewLine);
         }
 
-        private readonly struct GroupByFields(string subject, string start, string end)
+        private record GroupByFields(string Subject, string Start, string End)
         {
-            public readonly string Subject { get; } = subject;
-            public readonly string Start { get; } = start;
-            public readonly string End { get; } = end;
-
             public override string ToString()
             {
                 return $"{Subject} ({Start} - {End})";

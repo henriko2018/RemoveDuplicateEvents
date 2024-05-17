@@ -15,5 +15,11 @@ namespace RemoveDuplicates
 
         [Option(longName: "keepLongestBody", HelpText = "Keep duplicate with longest body. (Default is keep last modified.)")]
         public bool KeepLongestBody { get; set; }
+
+        [Option(longName: "checkRecurrence", HelpText = "Check for recurring events.")]
+        public bool CheckRecurrance { get; set; }
+
+        [Option(longName: "keepRecurring", HelpText = "Keep recurring event. (Default is keep last modified.)")]
+        public bool KeepRecurring { get; set; }
     }
 }
