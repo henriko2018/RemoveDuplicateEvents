@@ -3,7 +3,6 @@ using console_csharp_connect_sample;
 using Microsoft.Graph;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
@@ -23,13 +22,6 @@ namespace RemoveDuplicates
                     _options = opts;
                     RunOptionsAndReturnExitCodeAsync().GetAwaiter().GetResult();
                 });
-
-            if (Debugger.IsAttached)
-            {
-                Console.Out.WriteLine();
-                Console.Out.Write("Press any key to exit.");
-                Console.ReadKey();
-            }
         }
 
         private static async Task RunOptionsAndReturnExitCodeAsync()

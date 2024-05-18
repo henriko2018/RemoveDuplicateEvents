@@ -2,7 +2,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.27703.2000
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RemoveDuplicates", "RemoveDuplicates\RemoveDuplicates.csproj", "{6AE8F6EF-1523-4739-9CCE-43E57177F931}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RemoveDuplicates", "RemoveDuplicates\RemoveDuplicates.csproj", "{6AE8F6EF-1523-4739-9CCE-43E57177F931}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{2660A53E-7D78-4793-9E27-1DE981B211DE}"
 	ProjectSection(SolutionItems) = preProject
