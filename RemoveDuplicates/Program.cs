@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 
 namespace RemoveDuplicates
@@ -75,17 +76,11 @@ namespace RemoveDuplicates
             WriteInfo();
             WriteInfo($"# {calendar.Name}");
 
-            var request = graphClient.Me.Calendars[calendar.Id].Events.Request().Select("id,subject,start,end").Top(100);
-            var events = new List<Event>();
-            do
-            {
-                var page = await request.GetAsync();
-                events.AddRange(page.CurrentPage);
-                Console.Write(events.Count);
-                Console.SetCursorPosition(0, Console.CursorTop);
-                request = page.NextPageRequest;
-            } while (request != null);
-
+            List<Event> events;
+            if (_options.UseCalendarView)
+                events = await GetCalendarViewAsync(graphClient, calendar);
+            else
+                events = await GetEventsAsync(graphClient, calendar);
             WriteInfo(events.Count + " calendar events.");
 
             var groups = events.GroupBy(e => new GroupByFields(e.Subject, e.Start.DateTime, e.End.DateTime))
@@ -98,6 +93,48 @@ namespace RemoveDuplicates
             {
                 await ProcessDuplicatesAsync(graphClient, calendar, duplicateGroup);
             }
+        }
+
+        private static async Task<List<Event>> GetEventsAsync(IGraphServiceClient graphClient, Calendar calendar)
+        {
+            var request = graphClient.Me.Calendars[calendar.Id].Events.Request().Select("id,subject,start,end").Top(100);
+            var events = new List<Event>();
+            do
+            {
+                var page = await request.GetAsync();
+                events.AddRange(page.CurrentPage);
+                Console.Write(events.Count);
+                Console.SetCursorPosition(0, Console.CursorTop);
+                request = page.NextPageRequest;
+            }
+            while (request != null);
+            return events;
+        }
+
+        private static async Task<List<Event>> GetCalendarViewAsync(IGraphServiceClient graphClient, Calendar calendar)
+        {
+            // startDateTime and endDateTime must be specified and the maximum time range is 5 years.
+            // Use the current year.
+            var now = DateTimeOffset.Now;
+            var startDateTime = new DateTimeOffset(now.Year, 1, 1, 0, 0, 0, now.Offset);
+            var endDateTime = startDateTime.AddYears(1);
+            var options = new List<QueryOption>
+            {
+                new("startDateTime", WebUtility.UrlEncode(startDateTime.ToString("o"))),
+                new("endDateTime", WebUtility.UrlEncode(endDateTime.ToString("o")))
+            };
+            var request = graphClient.Me.Calendars[calendar.Id].CalendarView.Request(options).Select("id,subject,start,end").Top(100);
+            var events = new List<Event>();
+            do
+            {
+                var page = await request.GetAsync();
+                events.AddRange(page.CurrentPage);
+                Console.Write(events.Count);
+                Console.SetCursorPosition(0, Console.CursorTop);
+                request = page.NextPageRequest;
+            }
+            while (request != null);
+            return events;
         }
 
         private static async Task ProcessDuplicatesAsync(IGraphServiceClient graphClient, Calendar calendar, IGrouping<GroupByFields, Event> duplicateGroup)
@@ -120,7 +157,7 @@ namespace RemoveDuplicates
             // Events are sorted with the one to keep first.
             WriteInfo($"  Number of unique \"non-phantom\" IDs: {events.Count}");
 
-            if (events.Count > 1 && _options.Fix)
+            if (events.Count > 1)
             {
                 if (calendar.CanEdit.HasValue && calendar.CanEdit.Value)
                     await RemoveDuplicatesAsync(graphClient, calendar, events);
@@ -159,16 +196,21 @@ namespace RemoveDuplicates
         private static async Task RemoveDuplicatesAsync(IGraphServiceClient graphClient, Calendar calendar, IList<Event> events)
         {
             var eventToKeep = events.First();
+            WriteInfo("  Keeping last modified " + eventToKeep.LastModifiedDateTime);
             var eventsToDelete = events.Skip(1).ToList();
             var deleted = 0;
             foreach (var @event in eventsToDelete)
             {
+                WriteInfo("  Deleting last modified " + @event.LastModifiedDateTime);
                 try
                 {
-                    await graphClient.Me.Calendars[calendar.Id].Events[@event.Id].Request().DeleteAsync();
-                    deleted++;
-                    Console.Write($"  {deleted} of {eventsToDelete.Count} deleted.");
-                    Console.SetCursorPosition(0, Console.CursorTop);
+                    if (_options.Fix)
+                    {
+                        await graphClient.Me.Calendars[calendar.Id].Events[@event.Id].Request().DeleteAsync();
+                        deleted++;
+                        //Console.Write($"  {deleted} of {eventsToDelete.Count} deleted.");
+                        //Console.SetCursorPosition(0, Console.CursorTop);
+                    }
                 }
                 catch (ServiceException ex)
                 {
@@ -211,7 +253,9 @@ namespace RemoveDuplicates
 
             public override string ToString()
             {
-                return $"{Subject} ({Start} - {End})";
+                var start = DateTime.Parse(Start);
+                var end = DateTime.Parse(End);
+                return $"{Subject} ({start:g} - {end:g})";
             }
         }
     }

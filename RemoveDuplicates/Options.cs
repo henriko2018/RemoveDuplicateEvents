@@ -13,7 +13,10 @@ namespace RemoveDuplicates
         [Option(shortName: 'c', longName: "calendar", HelpText = "Process a named calendar, e.g. \"Family calendar\".")]
         public string Calendar { get; set; }
 
-        [Option(longName: "keepLongestBody", HelpText = "Keep duplicate with longest body. (Default is keep last modified.)")]
+        [Option(shortName: 'b', longName: "keepLongestBody", HelpText = "Keep duplicate with longest body. (Default is keep last modified.)")]
         public bool KeepLongestBody { get; set; }
+
+        [Option(shortName: 'v', longName: "useCalendarView", HelpText = "Use calendar view, which considers recurring events. (Default is use get events.)")]
+        public bool UseCalendarView { get; set; }
     }
 }
