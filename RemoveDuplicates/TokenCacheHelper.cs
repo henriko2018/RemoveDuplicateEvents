@@ -1,65 +1,45 @@
-﻿using System;
-using System.IO;
-using Microsoft.Identity.Client;
-using Directory = System.IO.Directory;
-using File = System.IO.File;
+﻿using Microsoft.Identity.Client;
+using Microsoft.Identity.Client.Extensions.Msal;
 
-namespace RemoveDuplicates
+namespace RemoveDuplicates;
+
+static class TokenCacheHelper
 {
-    static class TokenCacheHelper
+    // computing the root directory is not very simple on Linux and Mac, so a helper is provided
+    private static readonly string s_cacheFilePath =
+               Path.Combine(MsalCacheHelper.UserRootDirectory, "msal.contoso.cache");
+
+    public static readonly string CacheFileName = Path.GetFileName(s_cacheFilePath);
+    public static readonly string? CacheDir = Path.GetDirectoryName(s_cacheFilePath);
+
+    public static readonly string KeyChainServiceName = "Contoso.MyProduct";
+    public static readonly string KeyChainAccountName = "MSALCache";
+
+    public static readonly string LinuxKeyRingSchema = "com.contoso.devtools.tokencache";
+    public static readonly string LinuxKeyRingCollection = MsalCacheHelper.LinuxKeyRingDefaultCollection;
+    public static readonly string LinuxKeyRingLabel = "MSAL token cache for all Contoso dev tool apps.";
+    public static readonly KeyValuePair<string, string> LinuxKeyRingAttr1 = new("Version", "1");
+    public static readonly KeyValuePair<string, string> LinuxKeyRingAttr2 = new("ProductGroup", "MyApps");
+
+    public static async Task AddCacheAsync(IPublicClientApplication app, string clientId)
     {
+        // Building StorageCreationProperties
+        var storageProperties =
+             new StorageCreationPropertiesBuilder(CacheFileName, CacheDir)
+             .WithCacheChangedEvent(clientId)
+             .WithLinuxKeyring(
+                 LinuxKeyRingSchema,
+                 LinuxKeyRingCollection,
+                 LinuxKeyRingLabel,
+                 LinuxKeyRingAttr1,
+                 LinuxKeyRingAttr2)
+             .WithMacKeyChain(
+                 KeyChainServiceName,
+                 KeyChainAccountName)
+             .Build();
 
-        /// <summary>
-        /// Get the user token cache
-        /// </summary>
-        /// <returns></returns>
-        public static TokenCache GetUserCache()
-        {
-            if (_usertokenCache == null)
-            {
-                _usertokenCache = new TokenCache();
-                _usertokenCache.SetBeforeAccess(BeforeAccessNotification);
-                _usertokenCache.SetAfterAccess(AfterAccessNotification);
-            }
-            return _usertokenCache;
-        }
-
-        static TokenCache _usertokenCache;
-
-        /// <summary>
-        /// Path to the token cache
-        /// </summary>
-        public static string CacheFilePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            System.Reflection.Assembly.GetExecutingAssembly().GetName().Name,
-            "msalcache.txt");
-
-        private static readonly object FileLock = new object();
-
-        public static void BeforeAccessNotification(TokenCacheNotificationArgs args)
-        {
-            lock (FileLock)
-            {
-                args.TokenCache.Deserialize(File.Exists(CacheFilePath)
-                    ? File.ReadAllBytes(CacheFilePath)
-                    : null);
-            }
-        }
-
-        public static void AfterAccessNotification(TokenCacheNotificationArgs args)
-        {
-            // if the access operation resulted in a cache update
-            if (args.TokenCache.HasStateChanged)
-            {
-                lock (FileLock)
-                {
-                    // reflect changesgs in the persistent store
-                    Directory.CreateDirectory(Path.GetDirectoryName(CacheFilePath));
-                    File.WriteAllBytes(CacheFilePath, args.TokenCache.Serialize());
-                    // once the write operation takes place restore the HasStateChanged bit to filse
-                    args.TokenCache.HasStateChanged = false;
-                }
-            }
-        }
+        // This hooks up the cross-platform cache into MSAL
+        var cacheHelper = await MsalCacheHelper.CreateAsync(storageProperties);
+        cacheHelper.RegisterCache(app.UserTokenCache);
     }
 }
