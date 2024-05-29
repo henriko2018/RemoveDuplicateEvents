@@ -1,12 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <UseWindowsForms>true</UseWindowsForms>
-    <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
-	<ImplicitUsings>true</ImplicitUsings>
-	<Nullable>enable</Nullable>
+	  <ImplicitUsings>true</ImplicitUsings>
+	  <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CommandLineParser" Version="2.9.1" />
